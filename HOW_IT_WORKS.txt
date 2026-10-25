@@ -1,0 +1,948 @@
+================================================================================
+         TECHPULSE — TECH NEWS SUMMARIZER
+         COMPLETE EXPLANATION OF ALL FILES & LOGIC
+================================================================================
+
+Author: Built with Antigravity AI
+App:    TechPulse — Live Tech News Summarizer
+Stack:  Python + Streamlit + Free Public APIs (no API keys needed)
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+  1. Project Overview & Big Picture
+  2. How the App Works — End to End Flow
+  3. File: requirements.txt
+  4. File: .streamlit/config.toml
+  5. File: utils/__init__.py
+  6. File: utils/news_fetcher.py  [CORE LOGIC]
+  7. File: utils/summarizer.py   [CORE LOGIC]
+  8. File: app.py                [MAIN APP]
+  9. Key Concepts Explained
+  10. Data Flow Diagram (Text)
+
+================================================================================
+1. PROJECT OVERVIEW & BIG PICTURE
+================================================================================
+
+TechPulse is a web application built with Streamlit (a Python library that
+turns Python scripts into interactive web pages). It does three main things:
+
+  [A] FETCHES live tech news from 6 free public APIs — no account or API
+      key is needed because these APIs are fully open to the internet.
+
+  [B] PROCESSES each article — extracts a summary, key bullet points,
+      keywords, and estimates reading time using pure Python math (no AI
+      service needed).
+
+  [C] DISPLAYS everything in a premium dark-themed dashboard with filters,
+      search, bookmarks, and expandable summaries.
+
+The whole app is a single command:
+  > python -m streamlit run app.py
+
+Streamlit handles the web server, the HTML rendering, and the browser
+refresh automatically. You write Python — it becomes a live webpage.
+
+================================================================================
+2. HOW THE APP WORKS — END TO END FLOW
+================================================================================
+
+When a user opens http://localhost:8501 in their browser, here is exactly
+what happens step by step:
+
+  STEP 1 — Streamlit starts app.py from top to bottom.
+
+  STEP 2 — The sidebar renders first. The user sees:
+            - Category dropdown (All, AI/ML, Web Dev, etc.)
+            - Keyword search box
+            - Source checkboxes (Hacker News, Dev.to, TechCrunch, etc.)
+            - Articles-per-fetch slider (5–50)
+            - Refresh button
+            - Bookmarks panel
+
+  STEP 3 — app.py calls fetch_all() from news_fetcher.py, passing the
+            user's chosen category, search keyword, sources, and limit.
+
+  STEP 4 — fetch_all() calls three sub-fetchers in parallel order:
+            a) fetch_hackernews() → hits the Algolia/HN API
+            b) fetch_devto()      → hits the Dev.to REST API
+            c) fetch_rss()        → downloads 4 RSS XML feeds
+
+  STEP 5 — Each fetcher returns a list of article dictionaries. Every
+            article has these fields:
+              source, title, url, snippet, author, published,
+              score, comments, tags, image
+
+  STEP 6 — fetch_all() merges all lists, removes duplicates by title,
+            and returns the final list capped at the user's limit.
+
+  STEP 7 — For EACH article, app.py calls summarizer.py to:
+            a) summarize()        → 2-sentence smart summary
+            b) bullet_points()    → 3 key takeaway sentences
+            c) reading_time()     → "1 min read", "3 min read", etc.
+            d) extract_keywords() → top 5 keywords
+
+  STEP 8 — app.py renders each article as a styled HTML card with:
+            - Thumbnail image (if available)
+            - Colored source badge (orange for HN, blue for Dev.to, etc.)
+            - Category tag chips
+            - Clickable article title
+            - Snippet / summary text
+            - Meta row: author, date, read time, score, comments
+            - Expandable "Smart Summary & Key Takeaways" section
+
+  STEP 9 — Every time the user changes a filter (category, search, source),
+            Streamlit re-runs the entire script automatically. The cached
+            API results are reused so it stays fast.
+
+  STEP 10 — The user can click "Refresh Feed" to clear the cache and fetch
+             brand-new articles from the internet.
+
+================================================================================
+3. FILE: requirements.txt
+================================================================================
+
+LOCATION: c:\Users\MIlav\Desktop\AI_engg\1\requirements.txt
+
+This file lists all Python packages the app needs. When you deploy to
+Streamlit Community Cloud, the platform reads this file and automatically
+installs every package listed here.
+
+  streamlit>=1.32.0
+    The core framework. Turns Python into a web app. Handles the web
+    server, routing, widgets (dropdowns, sliders, buttons), HTML rendering,
+    session state, and caching.
+
+  requests>=2.31.0
+    The industry-standard Python HTTP library. Used to make GET requests
+    to the Hacker News Algolia API and the Dev.to REST API.
+    Example usage:
+      resp = requests.get("https://hn.algolia.com/api/v1/search", ...)
+      data = resp.json()
+
+  feedparser>=6.0.10
+    Parses RSS and Atom XML feeds. RSS is an old but very reliable standard
+    that almost every news website publishes. feedparser downloads the XML,
+    parses it, and gives you a clean Python object with .entries, .title,
+    .link, .summary etc.
+
+  beautifulsoup4>=4.12.0
+    HTML parser. RSS feed summaries often contain raw HTML tags like
+    <p>, <strong>, <img>. BeautifulSoup strips those tags out and gives
+    you clean plain text.
+
+  lxml>=5.1.0
+    A fast XML/HTML parsing engine. Used as the backend parser for
+    BeautifulSoup (BeautifulSoup("...", "lxml")).
+
+  pandas>=2.0.0
+    Tabular data library. Included as a dependency because Streamlit
+    internally uses it for its data display features like st.dataframe().
+
+================================================================================
+4. FILE: .streamlit/config.toml
+================================================================================
+
+LOCATION: c:\Users\MIlav\Desktop\AI_engg\1\.streamlit\config.toml
+
+This is Streamlit's configuration file. TOML is a simple config format
+(like INI files but cleaner). Streamlit reads this automatically on startup.
+
+  [theme]
+    base = "dark"
+      Tells Streamlit to start with its built-in dark theme as the base.
+
+    primaryColor = "#6C63FF"
+      The main accent color (purple). Used for buttons, sliders, selected
+      items, and focus highlights.
+
+    backgroundColor = "#0E1117"
+      The main page background color — a deep dark navy/black.
+
+    secondaryBackgroundColor = "#1A1D2E"
+      Used for the sidebar background, input boxes, and expanders.
+
+    textColor = "#E8EAF6"
+      The default text color — a soft off-white (not pure white, easier
+      on the eyes in dark mode).
+
+    font = "sans serif"
+      The base font family. We override this in CSS with Inter from Google
+      Fonts for a more premium look.
+
+  [server]
+    headless = true
+      Runs without trying to open a browser window automatically. Required
+      for cloud/server deployments.
+
+    enableCORS = false
+      Cross-Origin Resource Sharing setting. We set it false initially but
+      Streamlit overrides it to true when XSRF protection is on.
+
+    enableXsrfProtection = true
+      Enables Cross-Site Request Forgery protection — a security feature
+      that prevents malicious websites from making requests on your behalf.
+
+  [browser]
+    gatherUsageStats = false
+      Disables Streamlit's anonymous usage telemetry/analytics.
+
+================================================================================
+5. FILE: utils/__init__.py
+================================================================================
+
+LOCATION: c:\Users\MIlav\Desktop\AI_engg\1\utils\__init__.py
+
+This file is intentionally almost empty (just a comment). Its sole purpose
+is to tell Python: "this directory (utils/) is a package, not just a folder."
+
+Without this file, Python would not recognize `utils` as importable, and
+the imports in app.py would fail:
+  from utils.news_fetcher import fetch_all  # ← would break without __init__.py
+  from utils.summarizer import summarize    # ← same
+
+Think of __init__.py as a marker file that says "this folder is a module."
+
+================================================================================
+6. FILE: utils/news_fetcher.py  [CORE LOGIC — DATA LAYER]
+================================================================================
+
+LOCATION: c:\Users\MIlav\Desktop\AI_engg\1\utils\news_fetcher.py
+
+This is the DATA LAYER of the app. It knows nothing about the UI — it only
+knows how to go get news articles from the internet and return them as a
+standardized Python list of dictionaries.
+
+─────────────────────────────────────────────────
+6A. CATEGORY TAGS DICTIONARY
+─────────────────────────────────────────────────
+
+At the top of the file is CATEGORY_TAGS — a dictionary that maps each
+category name to a list of keywords:
+
+  CATEGORY_TAGS = {
+    "All":           [],
+    "AI / ML":       ["llm", "gpt", "openai", "gemini", ...],
+    "Web Dev":       ["javascript", "react", "css", ...],
+    "Cybersecurity": ["security", "hack", "vulnerability", ...],
+    "Hardware":      ["gpu", "nvidia", "chip", ...],
+    "Startups":      ["funding", "startup", "vc", ...],
+    "Open Source":   ["github", "linux", "rust", ...],
+  }
+
+This dictionary is the brain behind filtering. When the user selects
+"AI / ML" from the dropdown, the app checks every article's title and
+description for any of those keywords. If none match, the article is
+skipped.
+
+The helper function _matches_category(text, category) does this check:
+  - If category == "All", return True (no filtering)
+  - Otherwise, loop through keywords and return True if any are found
+
+─────────────────────────────────────────────────
+6B. FETCH_HACKERNEWS() — HACKER NEWS API
+─────────────────────────────────────────────────
+
+API used: https://hn.algolia.com/api/v1/search
+This is Algolia's search index of Hacker News. Completely free, no key.
+
+How it works:
+  1. Build a URL with query parameters:
+       query      = user's search term (default "technology")
+       tags       = "story" (only get stories, not comments/jobs)
+       hitsPerPage = limit * 2 (fetch double, then filter by category)
+       numericFilters = "points>10" (only stories with >10 upvotes)
+
+  2. Send GET request with requests.get()
+
+  3. Parse JSON response — it has a "hits" array where each hit is a story
+
+  4. For each hit, extract: title, url, author, created_at, points, num_comments
+
+  5. Run _matches_category() on the title — skip if it doesn't match
+
+  6. Build a standard article dict and append to list
+
+  7. Return when we have enough articles (up to limit)
+
+The @st.cache_data(ttl=300) decorator above this function means:
+  - Streamlit will cache (remember) the results for 300 seconds (5 minutes)
+  - If the same function is called again with the same arguments within 5
+    minutes, it returns the cached result WITHOUT making a new HTTP request
+  - This makes the app feel instant on repeated loads
+
+─────────────────────────────────────────────────
+6C. FETCH_DEVTO() — DEV.TO API
+─────────────────────────────────────────────────
+
+API used: https://dev.to/api/articles
+Dev.to is a developer blogging platform. Their public API returns JSON
+with no authentication required.
+
+How it works:
+  1. Build params:
+       per_page = limit * 2
+       state    = "rising" (trending/recently popular articles)
+       tag      = user's search term (optional)
+
+  2. GET request → parse JSON → list of article objects
+
+  3. Each article has: title, description, url, user.name,
+                       published_at, positive_reactions_count,
+                       comments_count, cover_image
+
+  4. Filter by category using _matches_category()
+
+  5. Return standardized article dicts
+
+Dev.to articles often have cover images, which show up as thumbnails in
+the left column of news cards.
+
+─────────────────────────────────────────────────
+6D. FETCH_RSS() — FOUR RSS FEEDS
+─────────────────────────────────────────────────
+
+Sources:
+  TechCrunch  → https://techcrunch.com/feed/
+  Ars Technica→ https://feeds.arstechnica.com/arstechnica/technology-lab
+  The Verge   → https://www.theverge.com/rss/index.xml
+  Wired       → https://www.wired.com/feed/rss
+
+RSS (Really Simple Syndication) is an XML format. Every major news site
+publishes one. The feedparser library downloads and parses the XML.
+
+How it works:
+  1. Loop through each selected RSS source
+
+  2. feedparser.parse(url) — downloads the XML and returns a Python object
+     with feed.entries being a list of articles
+
+  3. For each entry extract: title, summary (HTML), link, author,
+                              published_parsed (time struct)
+
+  4. _strip_html() — uses BeautifulSoup to remove HTML tags from the
+     summary text (RSS summaries often contain raw <p><strong> etc.)
+
+  5. _extract_rss_image() — tries to find a thumbnail image by checking
+     three possible locations RSS feeds use:
+       - entry.media_thumbnail  (Media RSS extension)
+       - entry.media_content    (alternate Media RSS)
+       - entry.enclosures       (standard RSS attachments)
+
+  6. _parse_rss_date() — converts feedparser's time tuple (like
+     (2026, 6, 29, 7, 0, 0, ...)) into a human readable "Jun 29, 2026"
+
+  7. Filter by keyword and category, build article dicts
+
+  8. Sort all articles by published date (newest first)
+
+─────────────────────────────────────────────────
+6E. _AUTO_TAGS() — AUTOMATIC CATEGORY TAGGING
+─────────────────────────────────────────────────
+
+Every article gets up to 3 colored category chip labels automatically.
+
+How it works:
+  - Loop through ALL categories in CATEGORY_TAGS
+  - For each category, check if any of its keywords appear in the text
+  - Collect all matching category names into a list
+  - Return the top 3
+
+Example: An article about "OpenAI releases new Rust SDK for developers"
+would get tags: ["AI / ML", "Open Source", "Web Dev"]
+
+─────────────────────────────────────────────────
+6F. FETCH_ALL() — THE MASTER FETCHER
+─────────────────────────────────────────────────
+
+This is the only function app.py calls directly. It orchestrates everything:
+
+  1. Calls fetch_hackernews() if "Hacker News" is in selected sources
+  2. Calls fetch_devto() if "Dev.to" is in selected sources
+  3. Calls fetch_rss() for any RSS sources selected
+  4. Combines all three lists into one big list
+  5. DEDUPLICATION: Uses a Python set to track seen titles. If two articles
+     from different sources have the same title (lowercased), the second
+     one is dropped.
+  6. Returns the first `limit` articles
+
+─────────────────────────────────────────────────
+6G. STANDARD ARTICLE DICTIONARY FORMAT
+─────────────────────────────────────────────────
+
+Every article, regardless of source, is normalized into this structure:
+
+  {
+    "source":    "Hacker News",        # String: source name
+    "title":     "Article title",      # String: headline
+    "url":       "https://...",        # String: link to original article
+    "snippet":   "Short description",  # String: preview text (may be empty)
+    "author":    "john_doe",           # String: author name
+    "published": "Jun 29, 2026",       # String: formatted date
+    "score":     142,                  # Int: upvotes (0 for RSS sources)
+    "comments":  38,                   # Int: comment count (0 for RSS)
+    "tags":      ["AI / ML"],          # List: auto-detected category tags
+    "image":     "https://img.url",    # String or None: thumbnail URL
+  }
+
+This normalization is KEY. Because all three sources give different JSON
+structures, we convert them all to the same format so app.py doesn't need
+to know where the article came from — it just reads the same fields.
+
+================================================================================
+7. FILE: utils/summarizer.py  [CORE LOGIC — NLP LAYER]
+================================================================================
+
+LOCATION: c:\Users\MIlav\Desktop\AI_engg\1\utils\summarizer.py
+
+This is the NLP (Natural Language Processing) layer. It processes raw text
+and produces summaries, bullet points, keywords, and reading time — all
+using pure Python math with zero external AI APIs.
+
+The technique used is called EXTRACTIVE SUMMARIZATION, which means we
+pick the most important EXISTING sentences from the text (rather than
+generating new ones). This is simpler and faster than generative AI, and
+works well for news snippets.
+
+─────────────────────────────────────────────────
+7A. STOP WORDS
+─────────────────────────────────────────────────
+
+_STOP_WORDS is a set of common English words that carry no meaning for
+analysis: "a", "the", "is", "are", "with", "from", etc.
+
+When we score sentences, we IGNORE stop words. Only meaningful content
+words like "nvidia", "vulnerability", "funding" contribute to the score.
+
+Why a set? Python sets have O(1) lookup time — checking "word" in set is
+instantaneous even with hundreds of words.
+
+─────────────────────────────────────────────────
+7B. _TOKENIZE(text)
+─────────────────────────────────────────────────
+
+Converts a string of text into a list of lowercase words.
+
+  re.findall(r"\b[a-z]{3,}\b", text.lower())
+
+This regex means:
+  \b     — word boundary (start/end of a word)
+  [a-z]  — only lowercase letters (no numbers, symbols)
+  {3,}   — at least 3 characters long (filters out "a", "is", "of")
+  \b     — word boundary again
+
+Example:
+  Input:  "OpenAI releases GPT-5 with major improvements"
+  Output: ["openai", "releases", "gpt", "with", "major", "improvements"]
+
+─────────────────────────────────────────────────
+7C. _SENTENCE_SPLIT(text)
+─────────────────────────────────────────────────
+
+Splits a paragraph into individual sentences.
+
+  re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)
+
+This regex means:
+  (?<=[.!?])  — look BEHIND and find a sentence-ending punctuation mark
+  \s+         — followed by whitespace
+  (?=[A-Z])   — look AHEAD and find an uppercase letter (start of new sentence)
+
+Only sentences longer than 20 characters are kept (filters one-word garbage).
+
+Example:
+  Input:  "OpenAI released a new model. It scored 95% on benchmarks. Impressive."
+  Output: ["OpenAI released a new model.", "It scored 95% on benchmarks."]
+
+─────────────────────────────────────────────────
+7D. _TERM_FREQ(tokens)
+─────────────────────────────────────────────────
+
+Calculates Term Frequency (TF) for every word in the article.
+
+TF = how often a word appears / maximum word frequency in the article
+
+This gives us a normalized score between 0 and 1 for each word.
+Words that appear more frequently are considered more important.
+
+Example: In an article about "NVIDIA GPU drivers", the word "nvidia"
+appears 5 times and "driver" 4 times. If 5 is the max, then:
+  nvidia: 5/5 = 1.0
+  driver: 4/5 = 0.8
+  chip:   2/5 = 0.4
+
+─────────────────────────────────────────────────
+7E. summarize(text, title, num_sentences) — THE MAIN FUNCTION
+─────────────────────────────────────────────────
+
+This is the heart of the NLP engine. It picks the N best sentences
+from the text. Here is exactly how it works:
+
+  Step 1: Split text into sentences using _sentence_split()
+
+  Step 2: If there are already <= num_sentences sentences, return them all
+          (no need to score, just use everything)
+
+  Step 3: Tokenize the ENTIRE text and compute TF scores for all words
+
+  Step 4: Tokenize the TITLE to get its key concepts
+
+  Step 5: Score every sentence using 3 signals:
+
+    SIGNAL A — TF Score (importance)
+      Sum up the TF scores of all meaningful words in the sentence.
+      Sentences containing high-frequency words score higher.
+      score = sum(tf[word] for word in sentence_words)
+
+    SIGNAL B — Position Boost (recency bias inverted)
+      Sentences earlier in the text tend to be more important in news.
+      score *= 1 / (1 + log(position + 1))
+      Position 0 → multiply by 1.0  (no penalty)
+      Position 1 → multiply by 0.58 (slight penalty)
+      Position 5 → multiply by 0.36 (larger penalty)
+
+    SIGNAL C — Title Overlap Bonus
+      If a sentence contains words that appear in the title, it's
+      likely to be about the main topic of the article.
+      score += (number of title words in sentence) * 0.5
+
+  Step 6: Sort all scored sentences by score (highest first)
+
+  Step 7: Take the top N sentences
+
+  Step 8: RE-SORT those top N sentences by their ORIGINAL position
+          (so the summary reads in the same order as the article)
+
+  Step 9: Join them into a paragraph and return
+
+─────────────────────────────────────────────────
+7F. bullet_points(text, title, n)
+─────────────────────────────────────────────────
+
+Simply calls summarize() asking for n sentences, then splits the result
+back into individual sentences and returns them as a list.
+
+These become the "KEY TAKEAWAYS" bullet points shown in the expander.
+
+─────────────────────────────────────────────────
+7G. reading_time(text)
+─────────────────────────────────────────────────
+
+A simple formula based on the average adult reading speed of 200 words/minute.
+
+  word_count = len(text.split())
+  minutes = max(1, round(word_count / 200))
+  return f"{minutes} min read"
+
+  Example: 400 words → 2 min read
+           80 words  → 1 min read (minimum is always 1)
+
+─────────────────────────────────────────────────
+7H. extract_keywords(text, title, top_n)
+─────────────────────────────────────────────────
+
+Extracts the most significant individual words from the article.
+
+  1. Combine title + text into one string
+  2. Tokenize and compute TF scores
+  3. Remove "noise words" — generic tech words that are common but
+     not specific: "like", "use", "new", "make", "get", "one", etc.
+  4. Sort remaining words by TF score (highest first)
+  5. Return top N words, capitalized
+
+These become the keyword pills shown in monospace font inside the expander.
+
+================================================================================
+8. FILE: app.py  [MAIN APPLICATION]
+================================================================================
+
+LOCATION: c:\Users\MIlav\Desktop\AI_engg\1\app.py
+
+This is the entry point — the file Streamlit runs. It is the PRESENTATION
+LAYER that connects the data layer (news_fetcher.py) and NLP layer
+(summarizer.py) to the user interface.
+
+─────────────────────────────────────────────────
+8A. PAGE CONFIG (Lines 18–27)
+─────────────────────────────────────────────────
+
+  st.set_page_config(
+    page_title="TechPulse — Tech News Summarizer",
+    page_icon="⚡",
+    layout="wide",          ← use full browser width
+    initial_sidebar_state="expanded",
+  )
+
+This MUST be the very first Streamlit call in the file — before any other
+st.* functions. It sets the browser tab title, favicon emoji, and layout.
+
+─────────────────────────────────────────────────
+8B. GLOBAL CSS INJECTION (Lines 32–250)
+─────────────────────────────────────────────────
+
+  st.markdown("<style>...</style>", unsafe_allow_html=True)
+
+Streamlit renders Python as HTML. By injecting a <style> block, we can
+override Streamlit's default styling with our own CSS.
+
+Key styles defined here:
+
+  .hero            — The big header banner with gradient background
+  .news-card       — Each article card with dark gradient and purple border
+  .news-card:hover — Lifts card up 3px on hover (micro-animation)
+  .news-card::before — The thin gradient line at the top of each card
+  .source-badge    — Colored pill showing which site the article is from
+  .tag-chip        — Blue chip showing category tags (AI/ML, Hardware, etc.)
+  .article-title   — Bold white headline text, turns purple on hover
+  .snippet         — Gray preview text below the headline
+  .meta-row        — The row with author, date, read time, score
+  .summary-box     — Purple-left-bordered box showing the smart summary
+  .bullet-list     — The KEY TAKEAWAYS bullet point list
+  .kw-pill         — Monospace keyword tags in cyan
+
+The Google Fonts import at the top loads the Inter font:
+  @import url('https://fonts.googleapis.com/css2?family=Inter:...')
+
+─────────────────────────────────────────────────
+8C. SESSION STATE (Lines 255–258)
+─────────────────────────────────────────────────
+
+  if "bookmarks" not in st.session_state:
+      st.session_state.bookmarks = []
+  if "refresh_key" not in st.session_state:
+      st.session_state.refresh_key = 0
+
+Streamlit re-runs the ENTIRE app.py script from top to bottom on every
+user interaction. Session state is how we persist data between re-runs.
+
+  st.session_state.bookmarks — a list of article dicts the user bookmarked.
+    Survives page re-renders. Lost when the browser tab is closed.
+
+  st.session_state.refresh_key — an integer that increments when the user
+    clicks "Refresh Feed". This forces fetch_all() to get a new cache key,
+    effectively bypassing the 5-minute cache.
+
+─────────────────────────────────────────────────
+8D. HELPER FUNCTIONS (Lines 265–298)
+─────────────────────────────────────────────────
+
+  source_badge(source) → HTML string
+    Maps source name to a CSS class and returns a colored <span> badge.
+    "Hacker News" → orange badge, "Dev.to" → blue badge, etc.
+
+  tag_chips(tags) → HTML string
+    Converts a list like ["AI / ML", "Hardware"] into a string of
+    blue <span class="tag-chip"> elements.
+
+  kw_pills(kws) → HTML string
+    Converts keyword list into monospace cyan <span class="kw-pill"> elements.
+
+  is_bookmarked(url) → bool
+    Checks if any article in st.session_state.bookmarks has the given URL.
+
+  toggle_bookmark(article)
+    If article is already bookmarked → remove it.
+    If not bookmarked → add it to the list.
+    Uses list comprehension filtering to remove: [b for b in bookmarks if b["url"] != url]
+
+─────────────────────────────────────────────────
+8E. SIDEBAR (Lines 305–377)
+─────────────────────────────────────────────────
+
+Everything inside "with st.sidebar:" renders in the left panel.
+
+  st.selectbox() — Category dropdown. User picks one of:
+    All, AI/ML, Web Dev, Cybersecurity, Hardware, Startups, Open Source
+
+  st.text_input() — Search box. User types any keyword.
+
+  st.multiselect() — Source selector. User can enable/disable any of the 6
+    news sources. All are selected by default.
+
+  st.slider() — Number of articles to fetch (5 to 50, default 20).
+
+  st.button("Refresh Feed") — When clicked:
+    1. st.cache_data.clear() → wipes ALL cached API responses
+    2. Increments refresh_key → forces the cache to miss on next fetch
+    3. st.rerun() → tells Streamlit to re-run the script immediately
+
+  Bookmarks section — Shows all saved articles as links. Shows count badge.
+  "Clear All Bookmarks" button → empties the list and reruns.
+
+─────────────────────────────────────────────────
+8F. HERO HEADER (Lines 384–394)
+─────────────────────────────────────────────────
+
+A raw HTML div injected with st.markdown(unsafe_allow_html=True):
+
+  <div class="hero">
+    <h1>⚡ TechPulse</h1>
+    <p>Live tech news from Hacker News, Dev.to...</p>
+  </div>
+
+The .hero CSS class gives it the deep blue gradient background, rounded
+corners, and the gradient purple→blue text effect on the h1 (using
+CSS -webkit-background-clip: text trick).
+
+─────────────────────────────────────────────────
+8G. FETCHING DATA (Lines 400–407)
+─────────────────────────────────────────────────
+
+  with st.spinner("⚡ Fetching latest tech news…"):
+      articles = fetch_all(
+          query=search_query,
+          category=category,
+          sources=selected_sources,
+          limit=limit,
+      )
+
+st.spinner() shows an animated spinner in the UI while fetch_all() runs.
+fetch_all() is usually fast (<1 second) thanks to caching — the spinner
+is mostly visible on the very first load or after a manual refresh.
+
+The user's sidebar choices (search_query, category, selected_sources, limit)
+are passed directly to fetch_all() so filtering happens at the API level
+where possible.
+
+─────────────────────────────────────────────────
+8H. METRICS BAR (Lines 413–417)
+─────────────────────────────────────────────────
+
+  col1, col2, col3, col4 = st.columns(4)
+  col1.metric("📰 Articles Loaded", len(articles))
+  col2.metric("📡 Active Sources", len(set(a["source"] for a in articles)))
+  col3.metric("🏷️ Category Filter", category)
+  col4.metric("🔍 Search Term", search_query or "—")
+
+st.columns(4) creates 4 equal-width columns side by side.
+st.metric() renders a nice bold number with a label — perfect for dashboards.
+The second metric counts unique sources using a Python set comprehension.
+
+─────────────────────────────────────────────────
+8I. NEWS FEED LOOP (Lines 441–549)
+─────────────────────────────────────────────────
+
+This is the main rendering loop. For each article in the articles list:
+
+  1. Extract all fields from the article dict
+
+  2. Run summarizer functions:
+       summary   = summarize(snippet, title, num_sentences=2)
+       bullets   = bullet_points(snippet, title, n=3)
+       read_time = reading_time(snippet)
+       keywords  = extract_keywords(snippet, title, top_n=5)
+
+  3. Open a card div:
+       st.markdown('<div class="news-card">', unsafe_allow_html=True)
+
+  4. If the article has an image:
+       img_col, txt_col = st.columns([1, 3])  ← 1:3 ratio
+       Show image in left column, content in right column
+     Otherwise:
+       Use a plain container for the content
+
+  5. Inside the content area:
+       - Render source badge HTML + tag chips HTML
+       - Render clickable title as an <a> tag
+       - Render snippet text (uses the smart summary if it's meaningful)
+       - Render meta row with author, date, read time, score, comments
+
+  6. Create an expander:
+       with st.expander("✨ Smart Summary & Key Takeaways"):
+         - Show summary in the purple-left-bordered .summary-box div
+         - Show bullet points as an <ul> list
+         - Show keywords as .kw-pill spans
+         - Two action buttons side by side:
+             [🔖 Save for Later]  [🔗 Read Full Article]
+
+       The bookmark button calls toggle_bookmark() then st.rerun().
+       The link button opens the original article URL in a new tab.
+
+  7. Close the card div:
+       st.markdown('</div>', unsafe_allow_html=True)
+
+─────────────────────────────────────────────────
+8J. EMPTY STATE (Lines 425–435)
+─────────────────────────────────────────────────
+
+If no articles were returned (no results for that search/filter combo):
+  - A centered telescope emoji + message is shown
+  - st.stop() halts further execution (skips the news loop)
+
+─────────────────────────────────────────────────
+8K. FOOTER (Lines 555–561)
+─────────────────────────────────────────────────
+
+A simple centered gray text line at the bottom crediting the data sources.
+
+================================================================================
+9. KEY CONCEPTS EXPLAINED
+================================================================================
+
+─────────────────────────────────────────────────
+CONCEPT 1: How Streamlit Works
+─────────────────────────────────────────────────
+
+Streamlit is fundamentally different from traditional web frameworks.
+
+Traditional framework (Flask/Django):
+  - You write routes like @app.route("/")
+  - You write HTML templates separately
+  - You handle HTTP requests/responses manually
+
+Streamlit:
+  - You write a regular Python script (top to bottom)
+  - Every st.* call outputs something to the webpage
+  - When the user interacts with anything (clicks button, moves slider),
+    Streamlit re-runs the ENTIRE script from scratch
+  - Session state preserves variables across re-runs
+
+This "re-run model" makes it incredibly fast to build dashboards and
+data apps because you think in Python, not HTML/JavaScript.
+
+─────────────────────────────────────────────────
+CONCEPT 2: st.cache_data — Why APIs Stay Fast
+─────────────────────────────────────────────────
+
+Without caching, every single user interaction would trigger 6 new HTTP
+requests to external APIs. That would be slow (1-3 seconds each) and
+would also overload the APIs.
+
+@st.cache_data(ttl=300) works like this:
+
+  First call (cache MISS):
+    fetch_hackernews("technology", "All", 20)
+    → Makes real HTTP request → stores result in memory → returns data
+
+  Second call within 5 minutes (cache HIT):
+    fetch_hackernews("technology", "All", 20)
+    → Sees same arguments → returns stored result instantly → NO HTTP request
+
+  After 5 minutes (cache EXPIRED):
+    fetch_hackernews("technology", "All", 20)
+    → Makes real HTTP request again → refreshes cache → returns new data
+
+The cache key is the FUNCTION NAME + ALL ARGUMENTS together. Change any
+argument and it's a different cache entry.
+
+─────────────────────────────────────────────────
+CONCEPT 3: RSS vs REST API vs Algolia
+─────────────────────────────────────────────────
+
+Three different ways to get news data, all free:
+
+  RSS Feed (TechCrunch, Ars Technica, The Verge, Wired):
+  - Standard XML format every news site publishes
+  - Just a URL that returns XML — no auth, no registration
+  - feedparser turns the XML into Python objects
+  - Best for major media outlets that have full article text
+
+  REST API (Dev.to):
+  - Returns clean JSON from a proper API endpoint
+  - Has parameters for filtering (tag=, state=, per_page=)
+  - Includes rich metadata: reactions, comments, images
+  - No key needed — Dev.to wants developers to use their API
+
+  Algolia Search API (Hacker News):
+  - Hacker News uses Algolia to power their search
+  - Algolia exposed this search API publicly (no key)
+  - Supports full-text search with ranking
+  - Can filter by type (story/comment/job) and score threshold
+
+─────────────────────────────────────────────────
+CONCEPT 4: Extractive vs Generative Summarization
+─────────────────────────────────────────────────
+
+GENERATIVE (GPT, Claude, Gemini):
+  - A large neural network WRITES NEW sentences
+  - Can rephrase, reframe, synthesize
+  - Requires an API key and costs money per request
+  - Slower (100-500ms per article)
+
+EXTRACTIVE (what we use):
+  - Picks the BEST EXISTING sentences from the source text
+  - No API, no cost, no latency
+  - Deterministic (same input = same output every time)
+  - Works perfectly for news articles which already have tight, clear writing
+  - Our scoring: TF weight + position bias + title overlap
+
+For short news snippets (50-300 words), extractive summarization works
+just as well as generative for the user's purposes.
+
+─────────────────────────────────────────────────
+CONCEPT 5: unsafe_allow_html=True
+─────────────────────────────────────────────────
+
+By default, Streamlit ESCAPES all HTML for security (turns < into &lt;).
+Adding unsafe_allow_html=True lets us inject raw HTML + CSS directly.
+
+We use this heavily for:
+  - Custom styled cards (<div class="news-card">)
+  - Source badges (<span class="source-badge badge-hn">)
+  - Tag chips, keyword pills
+  - The hero header
+
+The "unsafe" label is a security warning — if the HTML content came from
+untrusted user input it could be exploited. But here WE generate all the
+HTML in our own Python code, so it's perfectly safe.
+
+================================================================================
+10. DATA FLOW DIAGRAM (TEXT)
+================================================================================
+
+  USER opens browser → http://localhost:8501
+         │
+         ▼
+  [ app.py starts running top to bottom ]
+         │
+         ├─→ Renders SIDEBAR (category, search, sources, limit)
+         │
+         ├─→ Renders HERO HEADER
+         │
+         ├─→ Calls fetch_all(query, category, sources, limit)
+         │         │
+         │         ├─→ fetch_hackernews()
+         │         │       └─→ GET https://hn.algolia.com/api/v1/search
+         │         │           └─→ Filter by category
+         │         │           └─→ Return list of article dicts
+         │         │
+         │         ├─→ fetch_devto()
+         │         │       └─→ GET https://dev.to/api/articles
+         │         │           └─→ Filter by category
+         │         │           └─→ Return list of article dicts
+         │         │
+         │         ├─→ fetch_rss()
+         │         │       ├─→ feedparser.parse(techcrunch_rss_url)
+         │         │       ├─→ feedparser.parse(arstechnica_rss_url)
+         │         │       ├─→ feedparser.parse(theverge_rss_url)
+         │         │       ├─→ feedparser.parse(wired_rss_url)
+         │         │       └─→ Strip HTML → Filter → Return article dicts
+         │         │
+         │         └─→ Merge + Deduplicate → Return final list
+         │
+         ├─→ Renders METRICS BAR (articles count, sources count, etc.)
+         │
+         └─→ For EACH article:
+                   │
+                   ├─→ summarize(snippet, title)     → 2-sentence summary
+                   ├─→ bullet_points(snippet, title) → 3 key sentences
+                   ├─→ reading_time(snippet)          → "N min read"
+                   ├─→ extract_keywords(snippet)      → top 5 words
+                   │
+                   └─→ Render NEWS CARD:
+                             ├─→ Thumbnail image (if any)
+                             ├─→ Source badge + Category tags
+                             ├─→ Clickable headline
+                             ├─→ Smart summary snippet
+                             ├─→ Meta: author · date · read time · score
+                             └─→ Expander:
+                                     ├─→ Summary box (purple border)
+                                     ├─→ Bullet takeaways
+                                     ├─→ Keyword pills
+                                     ├─→ [🔖 Save] [🔗 Read Article]
+
+================================================================================
+END OF EXPLANATION
+================================================================================
